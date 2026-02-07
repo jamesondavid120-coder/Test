@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>MiniCraft 3D</title>
+<style>
+  body { margin: 0; overflow: hidden; }
+  canvas { display: block; }
+  #hint {
+    position: fixed;
+    top: 5px;
+    left: 5px;
+    color: white;
+    font-family: monospace;
+    font-size: 12px;
+    background: rgba(0,0,0,0.5);
+    padding: 4px;
+  }
+</style>
+</head>
+<body>
+<div id="hint">WASD move • Click remove block</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(
+  75, window.innerWidth / window.innerHeight, 0.1, 50
+);
+
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(1);
+document.body.appendChild(renderer.domElement);
+
+// Light (very simple)
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5,10,5);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+// Textures (tiny, pixelated)
+const loader = new THREE.TextureLoader();
+const grass = loader.load("https://i.imgur.com/8yKXsgs.png");
+const dirt  = loader.load("https://i.imgur.com/OZ7b9YF.png");
+grass.magFilter = dirt.magFilter = THREE.NearestFilter;
+
+// Materials
+const grassMat = new THREE.MeshLambertMaterial({ map: grass });
+const dirtMat  = new THREE.MeshLambertMaterial({ map: dirt });
+
+const cubeGeo = new THREE.BoxGeometry(1,1,1);
+const blocks = [];
+
+// Tiny world
+for (let x = 0; x < 8; x++) {
+  for (let z = 0; z < 8; z++) {
+    for (let y = 0; y < 3; y++) {
+      const mat = y === 2 ? grassMat : dirtMat;
+      const block = new THREE.Mesh(cubeGeo, mat);
+      block.position.set(x, y, z);
+      scene.add(block);
+      blocks.push(block);
+    }
+  }
+}
+
+camera.position.set(4, 4, 10);
+
+// Movement
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+// Raycaster (break blocks)
+const raycaster = new THREE.Raycaster();
+document.addEventListener("click", () => {
+  raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+  const hits = raycaster.intersectObjects(blocks);
+  if (hits.length) {
+    scene.remove(hits[0].object);
+    blocks.splice(blocks.indexOf(hits[0].object),1);
+  }
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const speed = 0.05;
+  if (keys["w"]) camera.position.z -= speed;
+  if (keys["s"]) camera.position.z += speed;
+  if (keys["a"]) camera.position.x -= speed;
+  if (keys["d"]) camera.position.x += speed;
+
+  camera.lookAt(camera.position.x, camera.position.y - 0.2, camera.position.z - 1);
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
