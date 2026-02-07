@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>MiniCraft 3D</title>
+<title>MiniCraft 3D Immersive</title>
 <style>
   body { margin: 0; overflow: hidden; }
   canvas { display: block; }
@@ -19,87 +19,182 @@
 </style>
 </head>
 <body>
-<div id="hint">WASD move • Click remove block</div>
+<div id="hint">WASD move • Click remove block • Arrow keys look</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
+// Scene & Camera
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
 
-const camera = new THREE.PerspectiveCamera(
-  75, window.innerWidth / window.innerHeight, 0.1, 50
-);
-
-const renderer = new THREE.WebGLRenderer({ antialias: false });
+// Renderer
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(1);
+renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-// Light (very simple)
+// Lights
 const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(5,10,5);
+light.position.set(100, 200, 100);
 scene.add(light);
 scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-// Textures (tiny, pixelated)
+// Textures (CDN hosted)
 const loader = new THREE.TextureLoader();
-const grass = loader.load("https://i.imgur.com/8yKXsgs.png");
-const dirt  = loader.load("https://i.imgur.com/OZ7b9YF.png");
-grass.magFilter = dirt.magFilter = THREE.NearestFilter;
+const grass = loader.load("https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/terrain/grasslight-big.jpg");
+const dirt  = loader.load("https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/terrain/dirt.jpg");
+const stone = loader.load("https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/terrain/rock.jpg");
+const diamond = loader.load("https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/textures/block/diamond_block.png");
+const log = loader.load("https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/textures/block/oak_log.png");
+const leaves = loader.load("https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/textures/block/oak_leaves.png");
+const pigTex = loader.load("https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/textures/entity/pig/pig.png");
+
+[grass,dirt,stone,diamond,log,leaves,pigTex].forEach(t => t.magFilter = THREE.NearestFilter);
 
 // Materials
 const grassMat = new THREE.MeshLambertMaterial({ map: grass });
 const dirtMat  = new THREE.MeshLambertMaterial({ map: dirt });
+const stoneMat = new THREE.MeshLambertMaterial({ map: stone });
+const diamondMat = new THREE.MeshLambertMaterial({ map: diamond });
+const logMat = new THREE.MeshLambertMaterial({ map: log });
+const leavesMat = new THREE.MeshLambertMaterial({ map: leaves });
+const pigMat = new THREE.MeshLambertMaterial({ map: pigTex });
 
+// Geometry
 const cubeGeo = new THREE.BoxGeometry(1,1,1);
 const blocks = [];
 
-// Tiny world
-for (let x = 0; x < 8; x++) {
-  for (let z = 0; z < 8; z++) {
-    for (let y = 0; y < 3; y++) {
-      const mat = y === 2 ? grassMat : dirtMat;
+// Huge terrain
+const WIDTH = 64;
+const DEPTH = 64;
+const MAX_HEIGHT = 15;
+
+// Height map function
+function heightAt(x,z) {
+  return Math.floor(4 + Math.sin(x*0.2)*3 + Math.cos(z*0.2)*3 + Math.random()*2);
+}
+
+// Generate terrain with caves
+for(let x=0;x<WIDTH;x++){
+  for(let z=0;z<DEPTH;z++){
+    const h = heightAt(x,z);
+    for(let y=0;y<=h;y++){
+      // Make caves: 5% chance empty for underground
+      if(y<h-2 && Math.random()<0.05) continue;
+      let mat;
+      if(y === h) mat = grassMat;
+      else if(y >= h-2) mat = dirtMat;
+      else mat = Math.random()<0.01?diamondMat:stoneMat;
       const block = new THREE.Mesh(cubeGeo, mat);
-      block.position.set(x, y, z);
+      block.position.set(x,y,z);
       scene.add(block);
       blocks.push(block);
+    }
+    // Random trees on top
+    if(Math.random()<0.08 && h>=3){
+      const treeHeight = 3+Math.floor(Math.random()*2);
+      // trunk
+      for(let ty=1; ty<=treeHeight; ty++){
+        const tBlock = new THREE.Mesh(cubeGeo, logMat);
+        tBlock.position.set(x,h+ty,z);
+        scene.add(tBlock);
+        blocks.push(tBlock);
+      }
+      // leaves cube
+      const leafStart = h+treeHeight;
+      for(let lx=-2;lx<=2;lx++){
+        for(let ly=0;ly<=2;ly++){
+          for(let lz=-2;lz<=2;lz++){
+            if(Math.abs(lx)+Math.abs(ly)+Math.abs(lz)<=3){
+              const leafBlock = new THREE.Mesh(cubeGeo, leavesMat);
+              leafBlock.position.set(x+lx,leafStart+ly,z+lz);
+              scene.add(leafBlock);
+              blocks.push(leafBlock);
+            }
+          }
+        }
+      }
     }
   }
 }
 
-camera.position.set(4, 4, 10);
+// Camera start
+camera.position.set(WIDTH/2, MAX_HEIGHT+5, DEPTH+20);
+camera.lookAt(WIDTH/2,0,DEPTH/2);
 
-// Movement
+// Player controls
 const keys = {};
-document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
-document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+let yaw = 0;
+let pitch = 0;
+document.addEventListener("mousemove",e=>{
+  yaw -= e.movementX*0.002;
+  pitch -= e.movementY*0.002;
+  pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+});
 
-// Raycaster (break blocks)
+// Raycaster to remove blocks
 const raycaster = new THREE.Raycaster();
-document.addEventListener("click", () => {
-  raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+document.addEventListener("click",()=>{
+  raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
   const hits = raycaster.intersectObjects(blocks);
-  if (hits.length) {
+  if(hits.length){
     scene.remove(hits[0].object);
     blocks.splice(blocks.indexOf(hits[0].object),1);
   }
 });
 
-function animate() {
+// Simple pig mob
+const pigGeo = new THREE.BoxGeometry(1,1,1);
+const pig = new THREE.Mesh(pigGeo, pigMat);
+let pigPos = {x: WIDTH/2+5, y: heightAt(WIDTH/2+5,DEPTH/2+5)+1, z: DEPTH/2+5};
+pig.position.set(pigPos.x,pigPos.y,pigPos.z);
+scene.add(pig);
+
+// Pig movement
+let pigDir = {x:1,z:0};
+function movePig(){
+  pigPos.x += pigDir.x*0.02;
+  pigPos.z += pigDir.z*0.02;
+  // simple random turn
+  if(Math.random()<0.01){
+    const angle = Math.random()*Math.PI*2;
+    pigDir.x = Math.cos(angle);
+    pigDir.z = Math.sin(angle);
+  }
+  const px = Math.round(pigPos.x), pz = Math.round(pigPos.z);
+  pigPos.y = heightAt(px,pz)+1;
+  pig.position.set(pigPos.x,pigPos.y,pigPos.z);
+}
+
+// Animate
+function animate(){
   requestAnimationFrame(animate);
 
-  const speed = 0.05;
-  if (keys["w"]) camera.position.z -= speed;
-  if (keys["s"]) camera.position.z += speed;
-  if (keys["a"]) camera.position.x -= speed;
-  if (keys["d"]) camera.position.x += speed;
+  // Player movement
+  const speed = 0.2;
+  let forward = new THREE.Vector3(Math.sin(yaw),0,-Math.cos(yaw));
+  let right = new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));
+  if(keys['w']) camera.position.addScaledVector(forward,speed);
+  if(keys['s']) camera.position.addScaledVector(forward,-speed);
+  if(keys['a']) camera.position.addScaledVector(right,-speed);
+  if(keys['d']) camera.position.addScaledVector(right,speed);
+  camera.position.y = Math.max(camera.position.y,2); // basic collision with ground
+  const look = new THREE.Vector3();
+  look.x = camera.position.x + Math.sin(yaw)*Math.cos(pitch);
+  look.y = camera.position.y + Math.sin(pitch);
+  look.z = camera.position.z - Math.cos(yaw)*Math.cos(pitch);
+  camera.lookAt(look);
 
-  camera.lookAt(camera.position.x, camera.position.y - 0.2, camera.position.z - 1);
-  renderer.render(scene, camera);
+  movePig();
+  renderer.render(scene,camera);
 }
 
 animate();
 </script>
 </body>
 </html>
+
